@@ -7,17 +7,23 @@ import (
 	"github.com/malcolmkzh/study-notifier/internal/modules/healthcheck"
 	"github.com/malcolmkzh/study-notifier/internal/modules/notes"
 	"github.com/malcolmkzh/study-notifier/internal/modules/questions"
+	"github.com/malcolmkzh/study-notifier/internal/modules/reminder"
 	"github.com/malcolmkzh/study-notifier/internal/utilities/config"
 	"github.com/malcolmkzh/study-notifier/internal/utilities/db"
 	"github.com/malcolmkzh/study-notifier/internal/utilities/httpclient"
 	"github.com/malcolmkzh/study-notifier/internal/utilities/httpserver"
 	"github.com/malcolmkzh/study-notifier/internal/utilities/llm"
+	"github.com/malcolmkzh/study-notifier/internal/utilities/notification"
+	"github.com/malcolmkzh/study-notifier/internal/utilities/scheduler"
 )
 
 type AppDependencies struct {
-	DB         db.Utility
-	HTTPServer httpserver.Utility
-	LLM        llm.Utility
+	DB           db.Utility
+	HTTPServer   httpserver.Utility
+	LLM          llm.Utility
+	Scheduler    scheduler.Utility
+	JobRepo      scheduler.JobRepository
+	Notification notification.Utility
 }
 
 func main() {
@@ -41,11 +47,23 @@ func main() {
 	if err != nil {
 		log.Fatal("Failed to initialize llm utility: ", err)
 	}
+	jobRepository, err := scheduler.NewJobRepository(dbUtility)
+	if err != nil {
+		log.Fatal("Failed to initialize scheduler job repository: ", err)
+	}
+	schedulerUtility, err := scheduler.NewUtility(jobRepository)
+	if err != nil {
+		log.Fatal("Failed to initialize scheduler utility: ", err)
+	}
+	notificationUtility := notification.NewNotificationUtility()
 
 	appDependencies := AppDependencies{
-		DB:         dbUtility,
-		HTTPServer: httpServerUtility,
-		LLM:        llmUtility,
+		DB:           dbUtility,
+		HTTPServer:   httpServerUtility,
+		LLM:          llmUtility,
+		Scheduler:    schedulerUtility,
+		JobRepo:      jobRepository,
+		Notification: notificationUtility,
 	}
 
 	//Init Modules
@@ -71,6 +89,21 @@ func main() {
 	})
 	if err != nil {
 		log.Fatal("Failed to initialize healthcheck module: ", err)
+	}
+
+	_, err = reminder.New(ctx, reminder.Dependencies{
+		DB:           appDependencies.DB,
+		Scheduler:    appDependencies.Scheduler,
+		JobRepo:      appDependencies.JobRepo,
+		Notification: appDependencies.Notification,
+	})
+	if err != nil {
+		log.Fatal("Failed to initialize reminder module: ", err)
+	}
+
+	err = appDependencies.Scheduler.Start(ctx)
+	if err != nil {
+		log.Fatal("Failed to start scheduler utility: ", err)
 	}
 
 	// Start HTTP server

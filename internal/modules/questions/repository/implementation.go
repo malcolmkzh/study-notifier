@@ -6,6 +6,7 @@ import (
 
 	"github.com/malcolmkzh/study-notifier/internal/modules/questions/model"
 	"github.com/malcolmkzh/study-notifier/internal/utilities/db"
+	"gorm.io/gorm"
 )
 
 type Implementation struct {
@@ -28,4 +29,21 @@ func (m *Implementation) CreateMany(ctx context.Context, questions []model.Quest
 	}
 
 	return m.db.DB().WithContext(ctx).Create(&questions).Error
+}
+
+func (m *Implementation) GetRandomQuestionByUserID(ctx context.Context, userID string) (*model.Question, error) {
+	var question model.Question
+
+	if err := m.db.DB().WithContext(ctx).
+		Where("user_id = ?", userID).
+		Order("RAND()").
+		First(&question).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+
+		return nil, err
+	}
+
+	return &question, nil
 }

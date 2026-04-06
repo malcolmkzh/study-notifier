@@ -34,6 +34,18 @@ func NewMigration(ctx context.Context, dbMigrationUtility dbmigration.Utility) (
 		Rollback:  m.generateMigration("/internal/migrations/scripts/create_questions_table_rollback.sql"),
 	})
 
+	dbMigrationUtility.RegisterMigration(dbmigration.MigrationRequest{
+		ID:        "2026040500000000004",
+		Migration: m.generateMigration("/internal/migrations/scripts/create_jobs_table.sql"),
+		Rollback:  m.generateMigration("/internal/migrations/scripts/create_jobs_table_rollback.sql"),
+	})
+
+	dbMigrationUtility.RegisterMigration(dbmigration.MigrationRequest{
+		ID:        "2026040500000000005",
+		Migration: m.generateMigration("/internal/migrations/scripts/create_reminders_table.sql"),
+		Rollback:  m.generateMigration("/internal/migrations/scripts/create_reminders_table_rollback.sql"),
+	})
+
 	return m, nil
 }
 
