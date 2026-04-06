@@ -46,6 +46,18 @@ func NewMigration(ctx context.Context, dbMigrationUtility dbmigration.Utility) (
 		Rollback:  m.generateMigration("/internal/migrations/scripts/create_reminders_table_rollback.sql"),
 	})
 
+	dbMigrationUtility.RegisterMigration(dbmigration.MigrationRequest{
+		ID:        "2026040600000000006",
+		Migration: m.generateMigration("/internal/migrations/scripts/add_telegram_chat_id_to_accounts.sql"),
+		Rollback:  m.generateMigration("/internal/migrations/scripts/add_telegram_chat_id_to_accounts_rollback.sql"),
+	})
+
+	dbMigrationUtility.RegisterMigration(dbmigration.MigrationRequest{
+		ID:        "2026040600000000007",
+		Migration: m.generateMigration("/internal/migrations/scripts/create_telegram_links_table.sql"),
+		Rollback:  m.generateMigration("/internal/migrations/scripts/create_telegram_links_table_rollback.sql"),
+	})
+
 	return m, nil
 }
 

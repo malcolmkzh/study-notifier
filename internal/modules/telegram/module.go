@@ -1,31 +1,29 @@
-package reminder
+package telegram
 
 import (
 	"context"
 	"errors"
 
-	questionrepository "github.com/malcolmkzh/study-notifier/internal/modules/questions/repository"
-	"github.com/malcolmkzh/study-notifier/internal/modules/reminder/controller"
-	"github.com/malcolmkzh/study-notifier/internal/modules/reminder/repository"
-	"github.com/malcolmkzh/study-notifier/internal/modules/reminder/service"
+	"github.com/malcolmkzh/study-notifier/internal/modules/telegram/controller"
+	"github.com/malcolmkzh/study-notifier/internal/modules/telegram/repository"
+	"github.com/malcolmkzh/study-notifier/internal/modules/telegram/service"
 	userrepository "github.com/malcolmkzh/study-notifier/internal/modules/user/repository"
+	"github.com/malcolmkzh/study-notifier/internal/utilities/config"
 	"github.com/malcolmkzh/study-notifier/internal/utilities/db"
 	"github.com/malcolmkzh/study-notifier/internal/utilities/httpserver"
 	"github.com/malcolmkzh/study-notifier/internal/utilities/notification"
-	"github.com/malcolmkzh/study-notifier/internal/utilities/scheduler"
 )
 
 type Dependencies struct {
 	DB           db.Utility
 	HTTPServer   httpserver.Utility
-	Scheduler    scheduler.Utility
-	JobRepo      scheduler.JobRepository
 	Notification notification.Utility
+	Config       config.Utility
 }
 
 type Module struct {
 	Repository repository.Utility
-	Service    service.Service
+	Service    service.Utility
 	Controller *controller.Implementation
 }
 
@@ -38,22 +36,14 @@ func New(ctx context.Context, dependencies Dependencies) (*Module, error) {
 	if dependencies.HTTPServer == nil {
 		return nil, errors.New("http server dependency is required")
 	}
-	if dependencies.Scheduler == nil {
-		return nil, errors.New("scheduler dependency is required")
-	}
-	if dependencies.JobRepo == nil {
-		return nil, errors.New("job repository dependency is required")
-	}
 	if dependencies.Notification == nil {
 		return nil, errors.New("notification dependency is required")
 	}
-
-	repo, err := repository.NewRepository(dependencies.DB)
-	if err != nil {
-		return nil, err
+	if dependencies.Config == nil {
+		return nil, errors.New("config dependency is required")
 	}
 
-	questionsRepo, err := questionrepository.NewRepository(dependencies.DB)
+	repo, err := repository.NewRepository(dependencies.DB)
 	if err != nil {
 		return nil, err
 	}
@@ -63,24 +53,15 @@ func New(ctx context.Context, dependencies Dependencies) (*Module, error) {
 		return nil, err
 	}
 
-	svc, err := service.NewService(
-		repo,
-		dependencies.JobRepo,
-		questionsRepo,
-		userRepo,
-		dependencies.Notification,
-		dependencies.Scheduler,
-	)
+	svc, err := service.NewService(repo, userRepo, dependencies.Notification)
 	if err != nil {
 		return nil, err
 	}
 
-	ctrl, err := controller.NewController(dependencies.HTTPServer, svc)
+	ctrl, err := controller.NewController(dependencies.HTTPServer, svc, dependencies.Config)
 	if err != nil {
 		return nil, err
 	}
-
-	dependencies.Scheduler.RegisterTask(service.TaskNameSendReminder, svc.HandleScheduledJob)
 
 	return &Module{
 		Repository: repo,

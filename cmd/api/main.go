@@ -8,6 +8,7 @@ import (
 	"github.com/malcolmkzh/study-notifier/internal/modules/notes"
 	"github.com/malcolmkzh/study-notifier/internal/modules/questions"
 	"github.com/malcolmkzh/study-notifier/internal/modules/reminder"
+	"github.com/malcolmkzh/study-notifier/internal/modules/telegram"
 	"github.com/malcolmkzh/study-notifier/internal/utilities/config"
 	"github.com/malcolmkzh/study-notifier/internal/utilities/db"
 	"github.com/malcolmkzh/study-notifier/internal/utilities/httpclient"
@@ -55,7 +56,10 @@ func main() {
 	if err != nil {
 		log.Fatal("Failed to initialize scheduler utility: ", err)
 	}
-	notificationUtility := notification.NewNotificationUtility()
+	notificationUtility, err := notification.NewNotificationUtility(configUtility, httpClientUtility)
+	if err != nil {
+		log.Fatal("Failed to initialize notification utility: ", err)
+	}
 
 	appDependencies := AppDependencies{
 		DB:           dbUtility,
@@ -93,12 +97,23 @@ func main() {
 
 	_, err = reminder.New(ctx, reminder.Dependencies{
 		DB:           appDependencies.DB,
+		HTTPServer:   appDependencies.HTTPServer,
 		Scheduler:    appDependencies.Scheduler,
 		JobRepo:      appDependencies.JobRepo,
 		Notification: appDependencies.Notification,
 	})
 	if err != nil {
 		log.Fatal("Failed to initialize reminder module: ", err)
+	}
+
+	_, err = telegram.New(ctx, telegram.Dependencies{
+		DB:           appDependencies.DB,
+		HTTPServer:   appDependencies.HTTPServer,
+		Notification: appDependencies.Notification,
+		Config:       configUtility,
+	})
+	if err != nil {
+		log.Fatal("Failed to initialize telegram module: ", err)
 	}
 
 	err = appDependencies.Scheduler.Start(ctx)

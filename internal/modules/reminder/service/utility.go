@@ -14,7 +14,6 @@ type Service interface {
 }
 
 type CreateReminderRequest struct {
-	UserID         string
-	TelegramChatID string
-	ScheduledAt    time.Time
+	UserID      string
+	ScheduledAt time.Time
 }

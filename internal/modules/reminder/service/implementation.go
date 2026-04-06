@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	questionrepository "github.com/malcolmkzh/study-notifier/internal/modules/questions/repository"
 	remindermodel "github.com/malcolmkzh/study-notifier/internal/modules/reminder/model"
 	reminderrepository "github.com/malcolmkzh/study-notifier/internal/modules/reminder/repository"
+	userrepository "github.com/malcolmkzh/study-notifier/internal/modules/user/repository"
 	"github.com/malcolmkzh/study-notifier/internal/utilities/notification"
 	"github.com/malcolmkzh/study-notifier/internal/utilities/scheduler"
 )
@@ -23,6 +25,7 @@ type Implementation struct {
 	reminderRepo        reminderrepository.Utility
 	jobRepo             scheduler.JobRepository
 	questionRepo        questionrepository.Utility
+	userRepo            userrepository.Utility
 	notificationUtility notification.Utility
 	schedulerUtility    scheduler.Utility
 }
@@ -31,6 +34,7 @@ func NewService(
 	reminderRepo reminderrepository.Utility,
 	jobRepo scheduler.JobRepository,
 	questionRepo questionrepository.Utility,
+	userRepo userrepository.Utility,
 	notificationUtility notification.Utility,
 	schedulerUtility scheduler.Utility,
 ) (*Implementation, error) {
@@ -43,6 +47,9 @@ func NewService(
 	if questionRepo == nil {
 		return nil, errors.New("question repository is required")
 	}
+	if userRepo == nil {
+		return nil, errors.New("user repository is required")
+	}
 	if notificationUtility == nil {
 		return nil, errors.New("notification utility is required")
 	}
@@ -54,6 +61,7 @@ func NewService(
 		reminderRepo:        reminderRepo,
 		jobRepo:             jobRepo,
 		questionRepo:        questionRepo,
+		userRepo:            userRepo,
 		notificationUtility: notificationUtility,
 		schedulerUtility:    schedulerUtility,
 	}, nil
@@ -63,16 +71,24 @@ func (s *Implementation) CreateReminder(ctx context.Context, req CreateReminderR
 	if req.UserID == "" {
 		return errors.New("user id is required")
 	}
-	if req.TelegramChatID == "" {
-		return errors.New("telegram chat id is required")
-	}
 	if req.ScheduledAt.IsZero() {
 		return errors.New("scheduled at is required")
 	}
 
+	account, err := s.userRepo.GetByID(ctx, req.UserID)
+	if err != nil {
+		return err
+	}
+	if account == nil {
+		return errors.New("user not found")
+	}
+	if account.TelegramChatID == nil || strings.TrimSpace(*account.TelegramChatID) == "" {
+		return errors.New("telegram account is not linked")
+	}
+
 	reminder := remindermodel.Reminder{
 		UserID:         req.UserID,
-		TelegramChatID: req.TelegramChatID,
+		TelegramChatID: strings.TrimSpace(*account.TelegramChatID),
 		ScheduledAt:    req.ScheduledAt,
 		Status:         remindermodel.ReminderStatusPending,
 	}
@@ -180,14 +196,34 @@ func (s *Implementation) TriggerReminder(ctx context.Context, reminderID int64) 
 		return fmt.Errorf("no question found for user %s", reminder.UserID)
 	}
 
-	if err := s.notificationUtility.SendQuestion(ctx, notification.SendQuestionRequest{
-		TelegramChatID: reminder.TelegramChatID,
-		QuestionText:   question.QuestionText,
-		Options:        []string{question.OptionA, question.OptionB, question.OptionC, question.OptionD},
-		CorrectOption:  question.CorrectOption,
+	if err := s.notificationUtility.SendTelegramMessage(ctx, notification.SendTelegramMessageRequest{
+		ChatID: reminder.TelegramChatID,
+		Text: buildQuestionMessage(
+			question.QuestionText,
+			[]string{question.OptionA, question.OptionB, question.OptionC, question.OptionD},
+		),
 	}); err != nil {
 		return err
 	}
 
 	return s.reminderRepo.MarkSent(ctx, reminderID)
+}
+
+func buildQuestionMessage(questionText string, options []string) string {
+	var builder strings.Builder
+	builder.WriteString(questionText)
+
+	labels := []string{"A", "B", "C", "D"}
+	for index, option := range options {
+		if index >= len(labels) || strings.TrimSpace(option) == "" {
+			continue
+		}
+
+		builder.WriteString("\n")
+		builder.WriteString(labels[index])
+		builder.WriteString(". ")
+		builder.WriteString(option)
+	}
+
+	return builder.String()
 }
