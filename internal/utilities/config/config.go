@@ -18,4 +18,5 @@ type Config struct {
 	TelegramWebhookSecret string `mapstructure:"TELEGRAM_WEBHOOK_SECRET"`
 	EnableDBLog           bool   `mapstructure:"ENABLE_DB_LOG"`
 	Verbose               bool   `mapstructure:"VERBOSE"`
+	CORSAllowedOrigin     string `mapstructure:"CORS_ALLOWED_ORIGIN"`
 }

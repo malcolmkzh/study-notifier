@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/malcolmkzh/study-notifier/internal/utilities/config"
 
@@ -20,11 +21,32 @@ type Implementation struct {
 
 func NewHttpServerUtility(configUtility config.Utility) *Implementation {
 	router := gin.New()
-	router.Use(gin.Logger(), gin.Recovery())
+	router.Use(corsMiddleware(configUtility), gin.Logger(), gin.Recovery(), addErrorResponse())
 
 	return &Implementation{
 		router: router,
 		config: configUtility,
+	}
+}
+
+func corsMiddleware(configUtility config.Utility) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		allowedOrigin := configUtility.Config().CORSAllowedOrigin
+		if strings.TrimSpace(allowedOrigin) == "" {
+			allowedOrigin = "http://localhost:5173"
+		}
+
+		c.Writer.Header().Set("Access-Control-Allow-Origin", allowedOrigin)
+		c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
+
+		if c.Request.Method == http.MethodOptions {
+			c.AbortWithStatus(http.StatusNoContent)
+			return
+		}
+
+		c.Next()
 	}
 }
 

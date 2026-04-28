@@ -54,7 +54,8 @@ func (c *Implementation) CreateTestReminder(ctx *gin.Context) {
 		ScheduledAt: scheduledAt,
 	})
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		_ = ctx.Error(err)
+		ctx.Abort()
 		return
 	}
 

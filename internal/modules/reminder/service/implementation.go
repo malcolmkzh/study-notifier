@@ -11,6 +11,7 @@ import (
 	remindermodel "github.com/malcolmkzh/study-notifier/internal/modules/reminder/model"
 	reminderrepository "github.com/malcolmkzh/study-notifier/internal/modules/reminder/repository"
 	userrepository "github.com/malcolmkzh/study-notifier/internal/modules/user/repository"
+	"github.com/malcolmkzh/study-notifier/internal/utilities/errorutil"
 	"github.com/malcolmkzh/study-notifier/internal/utilities/notification"
 	"github.com/malcolmkzh/study-notifier/internal/utilities/scheduler"
 )
@@ -69,10 +70,10 @@ func NewService(
 
 func (s *Implementation) CreateReminder(ctx context.Context, req CreateReminderRequest) error {
 	if req.UserID == "" {
-		return errors.New("user id is required")
+		return errorutil.NewWithMessage(errorutil.CodeValidation, "user id is required")
 	}
 	if req.ScheduledAt.IsZero() {
-		return errors.New("scheduled at is required")
+		return errorutil.NewWithMessage(errorutil.CodeValidation, "scheduled at is required")
 	}
 
 	account, err := s.userRepo.GetByID(ctx, req.UserID)
@@ -80,10 +81,10 @@ func (s *Implementation) CreateReminder(ctx context.Context, req CreateReminderR
 		return err
 	}
 	if account == nil {
-		return errors.New("user not found")
+		return errorutil.NewWithMessage(errorutil.CodeNotFound, "user not found")
 	}
 	if account.TelegramChatID == nil || strings.TrimSpace(*account.TelegramChatID) == "" {
-		return errors.New("telegram account is not linked")
+		return errorutil.New(errorutil.CodeTelegramNotLinked)
 	}
 
 	reminder := remindermodel.Reminder{

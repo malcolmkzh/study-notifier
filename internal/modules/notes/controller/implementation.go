@@ -8,8 +8,8 @@ import (
 
 	"github.com/malcolmkzh/study-notifier/internal/modules/notes/dto"
 	"github.com/malcolmkzh/study-notifier/internal/modules/notes/service"
+	"github.com/malcolmkzh/study-notifier/internal/utilities/errorutil"
 	"github.com/malcolmkzh/study-notifier/internal/utilities/httpserver"
-	"gorm.io/gorm"
 
 	"github.com/gin-gonic/gin"
 )
@@ -58,13 +58,15 @@ func (m *Implementation) Create(c *gin.Context) {
 
 	var request dto.CreateNoteRequest
 	if err := c.ShouldBindJSON(&request); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		_ = c.Error(errorutil.NewWithMessage(errorutil.CodeBadRequest, "invalid request body"))
+		c.Abort()
 		return
 	}
 
 	note, err := m.service.Create(c.Request.Context(), userID, request)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		_ = c.Error(err)
+		c.Abort()
 		return
 	}
 
@@ -80,7 +82,8 @@ func (m *Implementation) List(c *gin.Context) {
 
 	notes, err := m.service.List(c.Request.Context(), userID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		_ = c.Error(err)
+		c.Abort()
 		return
 	}
 
@@ -96,17 +99,20 @@ func (m *Implementation) GetByID(c *gin.Context) {
 
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid note id"})
+		_ = c.Error(errorutil.NewWithMessage(errorutil.CodeBadRequest, "invalid note id"))
+		c.Abort()
 		return
 	}
 
 	note, err := m.service.GetByID(c.Request.Context(), uint(id), userID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		_ = c.Error(err)
+		c.Abort()
 		return
 	}
 	if note == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "note not found"})
+		_ = c.Error(errorutil.NewWithMessage(errorutil.CodeNotFound, "note not found"))
+		c.Abort()
 		return
 	}
 
@@ -122,23 +128,22 @@ func (m *Implementation) Update(c *gin.Context) {
 
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid note id"})
+		_ = c.Error(errorutil.NewWithMessage(errorutil.CodeBadRequest, "invalid note id"))
+		c.Abort()
 		return
 	}
 
 	var request dto.UpdateNoteRequest
 	if err := c.ShouldBindJSON(&request); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		_ = c.Error(errorutil.NewWithMessage(errorutil.CodeBadRequest, "invalid request body"))
+		c.Abort()
 		return
 	}
 
 	note, err := m.service.Update(c.Request.Context(), uint(id), userID, request)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
-	}
-	if note == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "note not found"})
+		_ = c.Error(err)
+		c.Abort()
 		return
 	}
 
@@ -154,17 +159,15 @@ func (m *Implementation) Delete(c *gin.Context) {
 
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid note id"})
+		_ = c.Error(errorutil.NewWithMessage(errorutil.CodeBadRequest, "invalid note id"))
+		c.Abort()
 		return
 	}
 
 	err = m.service.Delete(c.Request.Context(), uint(id), userID)
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "note not found"})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		_ = c.Error(err)
+		c.Abort()
 		return
 	}
 

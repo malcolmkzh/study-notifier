@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	"github.com/malcolmkzh/study-notifier/internal/modules/questions/service"
+	"github.com/malcolmkzh/study-notifier/internal/utilities/errorutil"
 	"github.com/malcolmkzh/study-notifier/internal/utilities/httpserver"
 
 	"github.com/gin-gonic/gin"
@@ -51,17 +52,20 @@ func (m *Implementation) GenerateQuestions(c *gin.Context) {
 
 	noteID, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid note id"})
+		_ = c.Error(errorutil.NewWithMessage(errorutil.CodeBadRequest, "invalid note id"))
+		c.Abort()
 		return
 	}
 
 	response, err := m.service.GenerateQuestions(c.Request.Context(), uint(noteID), userID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		_ = c.Error(err)
+		c.Abort()
 		return
 	}
 	if response == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "note not found"})
+		_ = c.Error(errorutil.NewWithMessage(errorutil.CodeNotFound, "note not found"))
+		c.Abort()
 		return
 	}
 

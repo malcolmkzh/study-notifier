@@ -9,6 +9,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/malcolmkzh/study-notifier/internal/modules/telegram/service"
 	"github.com/malcolmkzh/study-notifier/internal/utilities/config"
+	"github.com/malcolmkzh/study-notifier/internal/utilities/errorutil"
 	"github.com/malcolmkzh/study-notifier/internal/utilities/httpserver"
 )
 
@@ -66,7 +67,8 @@ func (c *Implementation) CreateLink(ctx *gin.Context) {
 
 	response, err := c.service.CreateLink(ctx.Request.Context(), userID)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		_ = ctx.Error(err)
+		ctx.Abort()
 		return
 	}
 
@@ -76,13 +78,15 @@ func (c *Implementation) CreateLink(ctx *gin.Context) {
 func (c *Implementation) Webhook(ctx *gin.Context) {
 	expectedSecret := strings.TrimSpace(c.configUtility.Config().TelegramWebhookSecret)
 	if expectedSecret != "" && ctx.GetHeader("X-Telegram-Bot-Api-Secret-Token") != expectedSecret {
-		ctx.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		_ = ctx.Error(errorutil.New(errorutil.CodeUnauthorized))
+		ctx.Abort()
 		return
 	}
 
 	var update telegramUpdate
 	if err := ctx.ShouldBindJSON(&update); err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
+		_ = ctx.Error(errorutil.NewWithMessage(errorutil.CodeBadRequest, "invalid request"))
+		ctx.Abort()
 		return
 	}
 
