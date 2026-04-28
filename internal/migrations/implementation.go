@@ -58,6 +58,18 @@ func NewMigration(ctx context.Context, dbMigrationUtility dbmigration.Utility) (
 		Rollback:  m.generateMigration("/internal/migrations/scripts/create_telegram_links_table_rollback.sql"),
 	})
 
+	dbMigrationUtility.RegisterMigration(dbmigration.MigrationRequest{
+		ID:        "2026042800000000008",
+		Migration: m.generateMigration("/internal/migrations/scripts/create_note_folders_table.sql"),
+		Rollback:  m.generateMigration("/internal/migrations/scripts/create_note_folders_table_rollback.sql"),
+	})
+
+	dbMigrationUtility.RegisterMigration(dbmigration.MigrationRequest{
+		ID:        "2026042800000000009",
+		Migration: m.generateMigration("/internal/migrations/scripts/add_folder_id_to_notes.sql"),
+		Rollback:  m.generateMigration("/internal/migrations/scripts/add_folder_id_to_notes_rollback.sql"),
+	})
+
 	return m, nil
 }
 

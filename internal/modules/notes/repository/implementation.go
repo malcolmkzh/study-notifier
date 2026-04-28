@@ -18,10 +18,6 @@ func NewRepository(dbUtility db.Utility) (*Implementation, error) {
 		return nil, errors.New("db utility is required")
 	}
 
-	if err := dbUtility.DB().AutoMigrate(&model.Note{}); err != nil {
-		return nil, err
-	}
-
 	return &Implementation{
 		db: dbUtility,
 	}, nil

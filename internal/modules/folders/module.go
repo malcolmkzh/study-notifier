@@ -1,21 +1,19 @@
-package notes
+package folders
 
 import (
 	"context"
 	"errors"
 
-	folderrepository "github.com/malcolmkzh/study-notifier/internal/modules/folders/repository"
-	"github.com/malcolmkzh/study-notifier/internal/modules/notes/controller"
-	"github.com/malcolmkzh/study-notifier/internal/modules/notes/repository"
-	"github.com/malcolmkzh/study-notifier/internal/modules/notes/service"
+	"github.com/malcolmkzh/study-notifier/internal/modules/folders/controller"
+	"github.com/malcolmkzh/study-notifier/internal/modules/folders/repository"
+	"github.com/malcolmkzh/study-notifier/internal/modules/folders/service"
 	"github.com/malcolmkzh/study-notifier/internal/utilities/db"
 	"github.com/malcolmkzh/study-notifier/internal/utilities/httpserver"
 )
 
 type Dependencies struct {
-	DB               db.Utility
-	HTTPServer       httpserver.Utility
-	FolderRepository folderrepository.Utility
+	DB         db.Utility
+	HTTPServer httpserver.Utility
 }
 
 type Module struct {
@@ -33,16 +31,13 @@ func New(ctx context.Context, dependencies Dependencies) (*Module, error) {
 	if dependencies.HTTPServer == nil {
 		return nil, errors.New("http server dependency is required")
 	}
-	if dependencies.FolderRepository == nil {
-		return nil, errors.New("folder repository dependency is required")
-	}
 
 	repo, err := repository.NewRepository(dependencies.DB)
 	if err != nil {
 		return nil, err
 	}
 
-	svc, err := service.NewService(repo, dependencies.FolderRepository)
+	svc, err := service.NewService(repo)
 	if err != nil {
 		return nil, err
 	}

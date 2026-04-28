@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 
+	"github.com/malcolmkzh/study-notifier/internal/modules/folders"
 	"github.com/malcolmkzh/study-notifier/internal/modules/healthcheck"
 	"github.com/malcolmkzh/study-notifier/internal/modules/notes"
 	"github.com/malcolmkzh/study-notifier/internal/modules/questions"
@@ -71,9 +72,18 @@ func main() {
 	}
 
 	//Init Modules
-	_, err = notes.New(ctx, notes.Dependencies{
+	foldersModule, err := folders.New(ctx, folders.Dependencies{
 		DB:         appDependencies.DB,
 		HTTPServer: appDependencies.HTTPServer,
+	})
+	if err != nil {
+		log.Fatal("Failed to initialize folders module: ", err)
+	}
+
+	_, err = notes.New(ctx, notes.Dependencies{
+		DB:               appDependencies.DB,
+		HTTPServer:       appDependencies.HTTPServer,
+		FolderRepository: foldersModule.Repository,
 	})
 	if err != nil {
 		log.Fatal("Failed to initialize notes module: ", err)
