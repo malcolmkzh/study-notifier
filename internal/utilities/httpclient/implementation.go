@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	defaultTimeout         = 30 * time.Second
+	defaultTimeout         = 120 * time.Second
 	defaultMaxResponseSize = 5 << 20 // 5 MB
 )
 
@@ -37,7 +37,7 @@ func (e *HTTPError) Error() string {
 
 func NewHTTPClientUtility() *Implementation {
 	return &Implementation{
-		client:          &http.Client{Timeout: defaultTimeout},
+		client:          &http.Client{},
 		timeout:         defaultTimeout,
 		maxResponseSize: defaultMaxResponseSize,
 	}

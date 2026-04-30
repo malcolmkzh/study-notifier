@@ -5,9 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/malcolmkzh/study-notifier/internal/utilities/config"
 	"github.com/malcolmkzh/study-notifier/internal/utilities/httpclient"
@@ -20,7 +20,13 @@ type geminiUtility struct {
 
 // JSON structures for Gemini API
 type generateContentRequest struct {
-	Contents []content `json:"contents"`
+	Contents         []content        `json:"contents"`
+	GenerationConfig generationConfig `json:"generationConfig"`
+}
+
+type generationConfig struct {
+	ResponseMimeType   string         `json:"responseMimeType"`
+	ResponseJSONSchema map[string]any `json:"responseJsonSchema"`
 }
 
 type generateContentResponse struct {
@@ -58,12 +64,15 @@ func (m *geminiUtility) GenerateQuestions(ctx context.Context, request GenerateQ
 	_, err := m.httpClient.DoJSON(ctx, httpclient.Request{
 		Method:  http.MethodPost,
 		URL:     strings.TrimRight(cfg.LLMBaseURL, "/") + "/v1beta/models/" + model + ":generateContent",
-		Timeout: 30 * time.Second,
 		Headers: map[string]string{
 			"x-goog-api-key": cfg.LLMAPIKey,
 			"Content-Type":   "application/json",
 		},
 		Body: generateContentRequest{
+			GenerationConfig: generationConfig{
+				ResponseMimeType:   "application/json",
+				ResponseJSONSchema: questionsResponseSchema(),
+			},
 			Contents: []content{
 				{
 					Parts: []part{
@@ -86,28 +95,13 @@ func buildQuestionsPrompt(request GenerateQuestionsRequest) string {
 	return fmt.Sprintf(
 		`Generate 5 multiple-choice study questions from the note below.
 
-		Return ONLY valid JSON.
-		Do not include markdown.
-		Do not include code fences.
-		Do not include explanation text.
-
-		Use exactly this JSON structure:
-		{
-		"questions": [
-			{
-			"question": "string",
-			"options": ["string", "string", "string", "string"],
-			"answer": "string"
-			}
-		]
-		}
-
 		Rules:
 		- Generate exactly 5 questions
 		- Each question must have exactly 4 options
 		- The answer must exactly match one of the options
 		- Keep questions concise and clear
 		- Base the questions only on the note content
+		- Do not use placeholder values like "string"
 
 		Title: %s
 		Topic: %s
@@ -121,6 +115,42 @@ func buildQuestionsPrompt(request GenerateQuestionsRequest) string {
 	)
 }
 
+func questionsResponseSchema() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"questions": map[string]any{
+				"type": "array",
+				"items": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"question": map[string]any{
+							"type":        "string",
+							"description": "A concise multiple-choice question based on the note.",
+						},
+						"options": map[string]any{
+							"type": "array",
+							"items": map[string]any{
+								"type": "string",
+							},
+							"minItems": 4,
+							"maxItems": 4,
+						},
+						"answer": map[string]any{
+							"type":        "string",
+							"description": "The correct answer. This must exactly match one of the options.",
+						},
+					},
+					"required": []string{"question", "options", "answer"},
+				},
+				"minItems": 5,
+				"maxItems": 5,
+			},
+		},
+		"required": []string{"questions"},
+	}
+}
+
 // extractQuestions parses the Gemini API response and validates the generated questions.
 func extractQuestions(response generateContentResponse) (*GenerateQuestionsResponse, error) {
 	// Basic validation to ensure response contains expected content
@@ -132,6 +162,8 @@ func extractQuestions(response generateContentResponse) (*GenerateQuestionsRespo
 	if text == "" {
 		return nil, errors.New("llm response was empty")
 	}
+
+	slog.Info("llm raw response", "text", text)
 
 	// Unmarshal the cleaned text into our expected structure (question, options, answer)
 	var result GenerateQuestionsResponse
