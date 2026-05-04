@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"strings"
 
@@ -62,8 +61,8 @@ func (m *geminiUtility) GenerateQuestions(ctx context.Context, request GenerateQ
 
 	var response generateContentResponse
 	_, err := m.httpClient.DoJSON(ctx, httpclient.Request{
-		Method:  http.MethodPost,
-		URL:     strings.TrimRight(cfg.LLMBaseURL, "/") + "/v1beta/models/" + model + ":generateContent",
+		Method: http.MethodPost,
+		URL:    strings.TrimRight(cfg.LLMBaseURL, "/") + "/v1beta/models/" + model + ":generateContent",
 		Headers: map[string]string{
 			"x-goog-api-key": cfg.LLMAPIKey,
 			"Content-Type":   "application/json",
@@ -162,8 +161,6 @@ func extractQuestions(response generateContentResponse) (*GenerateQuestionsRespo
 	if text == "" {
 		return nil, errors.New("llm response was empty")
 	}
-
-	slog.Info("llm raw response", "text", text)
 
 	// Unmarshal the cleaned text into our expected structure (question, options, answer)
 	var result GenerateQuestionsResponse

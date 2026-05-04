@@ -105,7 +105,7 @@ func main() {
 		log.Fatal("Failed to initialize healthcheck module: ", err)
 	}
 
-	_, err = reminder.New(ctx, reminder.Dependencies{
+	reminderModule, err := reminder.New(ctx, reminder.Dependencies{
 		DB:           appDependencies.DB,
 		HTTPServer:   appDependencies.HTTPServer,
 		Scheduler:    appDependencies.Scheduler,
@@ -121,6 +121,7 @@ func main() {
 		HTTPServer:   appDependencies.HTTPServer,
 		Notification: appDependencies.Notification,
 		Config:       configUtility,
+		Reminder:     reminderModule.Service,
 	})
 	if err != nil {
 		log.Fatal("Failed to initialize telegram module: ", err)

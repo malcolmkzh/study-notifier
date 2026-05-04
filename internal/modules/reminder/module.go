@@ -80,7 +80,12 @@ func New(ctx context.Context, dependencies Dependencies) (*Module, error) {
 		return nil, err
 	}
 
-	dependencies.Scheduler.RegisterTask(service.TaskNameSendReminder, svc.HandleScheduledJob)
+	dependencies.Scheduler.RegisterTask(service.TaskNameSendReminder, svc.HandleSendReminderJob)
+	dependencies.Scheduler.RegisterTask(service.TaskNamePlanSmartReminders, svc.HandlePlannerJob)
+
+	if err := svc.EnsureNextPlannerJob(ctx); err != nil {
+		return nil, err
+	}
 
 	return &Module{
 		Repository: repo,

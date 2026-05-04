@@ -70,6 +70,24 @@ func NewMigration(ctx context.Context, dbMigrationUtility dbmigration.Utility) (
 		Rollback:  m.generateMigration("/internal/migrations/scripts/add_folder_id_to_notes_rollback.sql"),
 	})
 
+	dbMigrationUtility.RegisterMigration(dbmigration.MigrationRequest{
+		ID:        "2026050100000000010",
+		Migration: m.generateMigration("/internal/migrations/scripts/create_reminder_settings_table.sql"),
+		Rollback:  m.generateMigration("/internal/migrations/scripts/create_reminder_settings_table_rollback.sql"),
+	})
+
+	dbMigrationUtility.RegisterMigration(dbmigration.MigrationRequest{
+		ID:        "2026050100000000011",
+		Migration: m.generateMigration("/internal/migrations/scripts/create_question_attempts_table.sql"),
+		Rollback:  m.generateMigration("/internal/migrations/scripts/create_question_attempts_table_rollback.sql"),
+	})
+
+	dbMigrationUtility.RegisterMigration(dbmigration.MigrationRequest{
+		ID:        "2026050400000000012",
+		Migration: m.generateMigration("/internal/migrations/scripts/add_telegram_poll_fields_to_question_attempts.sql"),
+		Rollback:  m.generateMigration("/internal/migrations/scripts/add_telegram_poll_fields_to_question_attempts_rollback.sql"),
+	})
+
 	return m, nil
 }
 

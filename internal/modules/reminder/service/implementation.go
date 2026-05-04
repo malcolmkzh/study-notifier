@@ -6,8 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	questionrepository "github.com/malcolmkzh/study-notifier/internal/modules/questions/repository"
+	reminderdto "github.com/malcolmkzh/study-notifier/internal/modules/reminder/dto"
 	remindermodel "github.com/malcolmkzh/study-notifier/internal/modules/reminder/model"
 	reminderrepository "github.com/malcolmkzh/study-notifier/internal/modules/reminder/repository"
 	userrepository "github.com/malcolmkzh/study-notifier/internal/modules/user/repository"
@@ -17,6 +19,15 @@ import (
 )
 
 const TaskNameSendReminder scheduler.TaskName = "send_reminder"
+const TaskNamePlanSmartReminders scheduler.TaskName = "plan_smart_reminders"
+
+const (
+	defaultTimezone          = "Asia/Singapore"
+	dailySmartReminderTarget = 8
+	coldStartReminderTarget  = 24
+	minAttemptsForSmartHours = 5
+	timingExplorationPercent = 20
+)
 
 type ReminderJobMetadata struct {
 	ReminderID int64 `json:"reminder_id"`
@@ -120,58 +131,129 @@ func (s *Implementation) CreateReminder(ctx context.Context, req CreateReminderR
 	return s.schedulerUtility.SyncLocalJobWithDBJob(ctx, job)
 }
 
-func (s *Implementation) CancelReminder(ctx context.Context, reminderID int64) error {
-	reminder, err := s.reminderRepo.GetByID(ctx, reminderID)
+// Reminder Settings Related Service Methods
+func (s *Implementation) GetReminderSetting(ctx context.Context, userID string) (*reminderdto.ReminderSettingResponse, error) {
+	if strings.TrimSpace(userID) == "" {
+		return nil, errorutil.NewWithMessage(errorutil.CodeValidation, "user id is required")
+	}
+
+	setting, err := s.reminderRepo.GetSettingByUserID(ctx, userID)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	if reminder == nil {
-		return fmt.Errorf("reminder %d not found", reminderID)
-	}
-
-	if err := s.reminderRepo.MarkCancelled(ctx, reminderID); err != nil {
-		return err
-	}
-
-	jobs, err := s.jobRepo.SelectJobs(ctx, scheduler.SelectJobsRequest{
-		Statuses: []scheduler.JobStatus{
-			scheduler.JobStatusPending,
-			scheduler.JobStatusActive,
-		},
-	})
-	if err != nil {
-		return err
+	if setting == nil {
+		return &reminderdto.ReminderSettingResponse{
+			UserID:   userID,
+			Enabled:  false,
+			Timezone: defaultTimezone,
+		}, nil
 	}
 
-	jobName := fmt.Sprintf("send-reminder-%d", reminderID)
-	for _, job := range jobs {
-		if job.Name != jobName {
-			continue
+	return mapSettingResponse(*setting), nil
+}
+
+func (s *Implementation) UpdateReminderSetting(ctx context.Context, req UpdateReminderSettingRequest) (*reminderdto.ReminderSettingResponse, error) {
+	if strings.TrimSpace(req.UserID) == "" {
+		return nil, errorutil.NewWithMessage(errorutil.CodeValidation, "user id is required")
+	}
+
+	setting := remindermodel.ReminderSetting{
+		UserID:   req.UserID,
+		Enabled:  req.Enabled,
+		Timezone: defaultTimezone,
+	}
+	if err := s.reminderRepo.UpsertSetting(ctx, &setting); err != nil {
+		return nil, err
+	}
+
+	if !req.Enabled {
+		if err := s.cancelFutureRemindersForUser(ctx, req.UserID); err != nil {
+			return nil, err
 		}
+	}
 
-		deletedStatus := scheduler.JobStatusDeleted
-		if err := s.jobRepo.UpdateJob(ctx, scheduler.UpdateJobRequest{
-			ID:     job.ID,
-			Status: &deletedStatus,
-		}); err != nil {
-			return err
-		}
+	return s.GetReminderSetting(ctx, req.UserID)
+}
 
-		dbJob, err := s.jobRepo.GetJobByID(ctx, job.ID)
+// Scheduler Job Handler for Daily Smart Reminder Planning
+func (s *Implementation) HandlePlannerJob(ctx context.Context, metadata json.RawMessage) error {
+	_ = metadata
+
+	if err := s.PlanSmartReminders(ctx, nil); err != nil {
+		return err
+	}
+
+	return s.EnsureNextPlannerJob(ctx)
+}
+
+func (s *Implementation) PlanSmartReminders(ctx context.Context, userID *string) error {
+	if userID != nil {
+		setting, err := s.reminderRepo.GetSettingByUserID(ctx, *userID)
 		if err != nil {
 			return err
 		}
-		if dbJob != nil {
-			return s.schedulerUtility.SyncLocalJobWithDBJob(ctx, *dbJob)
+		if setting == nil || !setting.Enabled {
+			return errorutil.NewWithMessage(errorutil.CodeValidation, "smart reminders are not enabled")
 		}
 
-		break
+		return s.planForSetting(ctx, *setting)
+	}
+
+	settings, err := s.reminderRepo.ListEnabledSettings(ctx)
+	if err != nil {
+		return err
+	}
+
+	for _, setting := range settings {
+		if err := s.planForSetting(ctx, setting); err != nil {
+			// Keep planning other users even if one user is not ready.
+			continue
+		}
 	}
 
 	return nil
 }
 
-func (s *Implementation) HandleScheduledJob(ctx context.Context, metadata json.RawMessage) error {
+// Create next daily scheduled job to plan smart reminders
+func (s *Implementation) EnsureNextPlannerJob(ctx context.Context) error {
+	location, err := time.LoadLocation(defaultTimezone)
+	if err != nil {
+		return err
+	}
+
+	now := time.Now().In(location)
+	nextMidnight := time.Date(now.Year(), now.Month(), now.Day()+1, 0, 0, 0, 0, location)
+	jobName := fmt.Sprintf("plan-smart-reminders-%s", nextMidnight.Format("2006-01-02"))
+
+	jobs, err := s.jobRepo.SelectJobs(ctx, scheduler.SelectJobsRequest{
+		Statuses: []scheduler.JobStatus{scheduler.JobStatusActive},
+	})
+	if err != nil {
+		return err
+	}
+
+	for _, job := range jobs {
+		if job.Name == jobName {
+			return nil
+		}
+	}
+
+	job := scheduler.Job{
+		Name:        jobName,
+		TaskName:    TaskNamePlanSmartReminders,
+		Status:      scheduler.JobStatusActive,
+		ScheduledAt: nextMidnight.UTC(),
+	}
+
+	if err := s.jobRepo.CreateJob(ctx, &job); err != nil {
+		return err
+	}
+
+	return s.schedulerUtility.SyncLocalJobWithDBJob(ctx, job)
+}
+
+// Scheduler Job Handler for Sending Reminders
+func (s *Implementation) HandleSendReminderJob(ctx context.Context, metadata json.RawMessage) error {
 	var data ReminderJobMetadata
 	if err := json.Unmarshal(metadata, &data); err != nil {
 		return err
@@ -197,34 +279,115 @@ func (s *Implementation) TriggerReminder(ctx context.Context, reminderID int64) 
 		return fmt.Errorf("no question found for user %s", reminder.UserID)
 	}
 
-	if err := s.notificationUtility.SendTelegramMessage(ctx, notification.SendTelegramMessageRequest{
-		ChatID: reminder.TelegramChatID,
-		Text: buildQuestionMessage(
-			question.QuestionText,
-			[]string{question.OptionA, question.OptionB, question.OptionC, question.OptionD},
-		),
-	}); err != nil {
+	correctOptionID, err := correctOptionID(question.CorrectOption)
+	if err != nil {
 		return err
+	}
+
+	attempt := remindermodel.QuestionAttempt{
+		UserID:          reminder.UserID,
+		ReminderID:      reminder.ID,
+		QuestionID:      question.ID,
+		CorrectOptionID: correctOptionID,
+		SentAt:          time.Now().UTC(),
+	}
+	if err := s.reminderRepo.CreateQuestionAttempt(ctx, &attempt); err != nil {
+		return err
+	}
+
+	pollID, err := s.notificationUtility.SendTelegramQuizPoll(ctx, notification.SendTelegramQuizPollRequest{
+		ChatID:          reminder.TelegramChatID,
+		Question:        question.QuestionText,
+		Options:         []string{question.OptionA, question.OptionB, question.OptionC, question.OptionD},
+		CorrectOptionID: attempt.CorrectOptionID,
+	})
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(pollID) != "" {
+		if err := s.reminderRepo.UpdateQuestionAttemptTelegramPollID(ctx, attempt.ID, pollID); err != nil {
+			return err
+		}
 	}
 
 	return s.reminderRepo.MarkSent(ctx, reminderID)
 }
 
-func buildQuestionMessage(questionText string, options []string) string {
-	var builder strings.Builder
-	builder.WriteString(questionText)
+func correctOptionID(correctOption string) (int, error) {
+	switch strings.ToUpper(strings.TrimSpace(correctOption)) {
+	case "A":
+		return 0, nil
+	case "B":
+		return 1, nil
+	case "C":
+		return 2, nil
+	case "D":
+		return 3, nil
+	default:
+		return 0, fmt.Errorf("invalid correct option %q", correctOption)
+	}
+}
 
-	labels := []string{"A", "B", "C", "D"}
-	for index, option := range options {
-		if index >= len(labels) || strings.TrimSpace(option) == "" {
-			continue
-		}
-
-		builder.WriteString("\n")
-		builder.WriteString(labels[index])
-		builder.WriteString(". ")
-		builder.WriteString(option)
+func (s *Implementation) cancelFutureRemindersForUser(ctx context.Context, userID string) error {
+	reminders, err := s.reminderRepo.ListPendingByUserIDAfter(ctx, userID, time.Now().UTC())
+	if err != nil {
+		return err
 	}
 
-	return builder.String()
+	activeStatus := scheduler.JobStatusActive
+	deletedStatus := scheduler.JobStatusDeleted
+	jobs, err := s.jobRepo.SelectJobs(ctx, scheduler.SelectJobsRequest{
+		Statuses: []scheduler.JobStatus{activeStatus},
+	})
+	if err != nil {
+		return err
+	}
+
+	for _, reminder := range reminders {
+		if err := s.reminderRepo.MarkCancelled(ctx, reminder.ID); err != nil {
+			return err
+		}
+
+		jobName := fmt.Sprintf("send-reminder-%d", reminder.ID)
+		for _, job := range jobs {
+			if job.Name != jobName {
+				continue
+			}
+
+			if err := s.jobRepo.UpdateJob(ctx, scheduler.UpdateJobRequest{
+				ID:     job.ID,
+				Status: &deletedStatus,
+			}); err != nil {
+				return err
+			}
+
+			dbJob, err := s.jobRepo.GetJobByID(ctx, job.ID)
+			if err != nil {
+				return err
+			}
+			if dbJob != nil {
+				if err := s.schedulerUtility.SyncLocalJobWithDBJob(ctx, *dbJob); err != nil {
+					return err
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
+func mapSettingResponse(setting remindermodel.ReminderSetting) *reminderdto.ReminderSettingResponse {
+	return &reminderdto.ReminderSettingResponse{
+		UserID:   setting.UserID,
+		Enabled:  setting.Enabled,
+		Timezone: settingTimezone(setting),
+	}
+}
+
+func settingTimezone(setting remindermodel.ReminderSetting) string {
+	if strings.TrimSpace(setting.Timezone) == "" {
+		return defaultTimezone
+	}
+
+	return strings.TrimSpace(setting.Timezone)
 }

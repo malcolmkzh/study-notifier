@@ -9,4 +9,5 @@ import (
 type Utility interface {
 	CreateLink(ctx context.Context, userID string) (*dto.CreateLinkResponse, error)
 	HandleMessage(ctx context.Context, chatID int64, text string) error
+	HandlePollAnswer(ctx context.Context, pollID string, optionIDs []int) error
 }

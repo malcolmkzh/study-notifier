@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 
+	reminderservice "github.com/malcolmkzh/study-notifier/internal/modules/reminder/service"
 	"github.com/malcolmkzh/study-notifier/internal/modules/telegram/controller"
 	"github.com/malcolmkzh/study-notifier/internal/modules/telegram/repository"
 	"github.com/malcolmkzh/study-notifier/internal/modules/telegram/service"
@@ -19,6 +20,7 @@ type Dependencies struct {
 	HTTPServer   httpserver.Utility
 	Notification notification.Utility
 	Config       config.Utility
+	Reminder     reminderservice.Service
 }
 
 type Module struct {
@@ -42,6 +44,9 @@ func New(ctx context.Context, dependencies Dependencies) (*Module, error) {
 	if dependencies.Config == nil {
 		return nil, errors.New("config dependency is required")
 	}
+	if dependencies.Reminder == nil {
+		return nil, errors.New("reminder dependency is required")
+	}
 
 	repo, err := repository.NewRepository(dependencies.DB)
 	if err != nil {
@@ -53,7 +58,7 @@ func New(ctx context.Context, dependencies Dependencies) (*Module, error) {
 		return nil, err
 	}
 
-	svc, err := service.NewService(repo, userRepo, dependencies.Notification)
+	svc, err := service.NewService(repo, userRepo, dependencies.Notification, dependencies.Reminder)
 	if err != nil {
 		return nil, err
 	}

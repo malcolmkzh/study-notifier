@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	reminderservice "github.com/malcolmkzh/study-notifier/internal/modules/reminder/service"
 	"github.com/malcolmkzh/study-notifier/internal/modules/telegram/dto"
 	telegrammodel "github.com/malcolmkzh/study-notifier/internal/modules/telegram/model"
 	telegramrepository "github.com/malcolmkzh/study-notifier/internal/modules/telegram/repository"
@@ -28,6 +29,7 @@ type Implementation struct {
 	telegramLinkRepo telegramrepository.Utility
 	userRepo         userrepository.Utility
 	notification     notification.Utility
+	reminderService  reminderservice.Service
 	now              func() time.Time
 }
 
@@ -35,6 +37,7 @@ func NewService(
 	telegramLinkRepo telegramrepository.Utility,
 	userRepo userrepository.Utility,
 	notificationUtility notification.Utility,
+	reminderService reminderservice.Service,
 ) (*Implementation, error) {
 	if telegramLinkRepo == nil {
 		return nil, errors.New("telegram link repository is required")
@@ -45,11 +48,15 @@ func NewService(
 	if notificationUtility == nil {
 		return nil, errors.New("notification utility is required")
 	}
+	if reminderService == nil {
+		return nil, errors.New("reminder service is required")
+	}
 
 	return &Implementation{
 		telegramLinkRepo: telegramLinkRepo,
 		userRepo:         userRepo,
 		notification:     notificationUtility,
+		reminderService:  reminderService,
 		now:              time.Now,
 	}, nil
 }
@@ -95,6 +102,10 @@ func (s *Implementation) HandleMessage(ctx context.Context, chatID int64, text s
 	default:
 		return nil
 	}
+}
+
+func (s *Implementation) HandlePollAnswer(ctx context.Context, pollID string, optionIDs []int) error {
+	return s.reminderService.HandlePollAnswer(ctx, pollID, optionIDs)
 }
 
 func (s *Implementation) handleLink(ctx context.Context, chatID int64, code string) error {

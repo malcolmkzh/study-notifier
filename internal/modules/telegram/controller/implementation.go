@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -26,6 +27,10 @@ type telegramUpdate struct {
 			ID int64 `json:"id"`
 		} `json:"chat"`
 	} `json:"message"`
+	PollAnswer struct {
+		PollID    string `json:"poll_id"`
+		OptionIDs []int  `json:"option_ids"`
+	} `json:"poll_answer"`
 }
 
 func NewController(httpServerUtility httpserver.Utility, service service.Utility, configUtility config.Utility) (*Implementation, error) {
@@ -92,11 +97,27 @@ func (c *Implementation) Webhook(ctx *gin.Context) {
 
 	ctx.Status(http.StatusOK)
 
+	if update.PollAnswer.PollID != "" {
+		pollID := update.PollAnswer.PollID
+		optionIDs := update.PollAnswer.OptionIDs
+		go func() {
+			if err := c.service.HandlePollAnswer(context.Background(), pollID, optionIDs); err != nil {
+				slog.Error("failed to handle telegram poll answer", "error", err, "poll_id", pollID)
+			}
+		}()
+
+		return
+	}
+
 	if update.Message.Text == "" {
 		return
 	}
 
-	go func(chatID int64, text string) {
-		_ = c.service.HandleMessage(context.Background(), chatID, text)
-	}(update.Message.Chat.ID, update.Message.Text)
+	chatID := update.Message.Chat.ID
+	text := update.Message.Text
+	go func() {
+		if err := c.service.HandleMessage(context.Background(), chatID, text); err != nil {
+			slog.Error("failed to handle telegram message", "error", err, "chat_id", chatID)
+		}
+	}()
 }

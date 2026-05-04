@@ -4,9 +4,9 @@ import (
 	"context"
 	"errors"
 	"net/http"
-	"time"
 
 	"github.com/gin-gonic/gin"
+	reminderdto "github.com/malcolmkzh/study-notifier/internal/modules/reminder/dto"
 	"github.com/malcolmkzh/study-notifier/internal/modules/reminder/service"
 	"github.com/malcolmkzh/study-notifier/internal/utilities/httpserver"
 )
@@ -30,7 +30,9 @@ func NewController(httpServerUtility httpserver.Utility, service service.Service
 	}
 
 	routes := []httpserver.RegisterEndpointRequest{
-		{Method: http.MethodPost, Path: "/reminders/test", Fn: controller.CreateTestReminder, RequireAuth: true},
+		{Method: http.MethodPost, Path: "/reminders/plan-today", Fn: controller.PlanToday, RequireAuth: true},
+		{Method: http.MethodGet, Path: "/reminder-settings", Fn: controller.GetReminderSetting, RequireAuth: true},
+		{Method: http.MethodPut, Path: "/reminder-settings", Fn: controller.UpdateReminderSetting, RequireAuth: true},
 	}
 
 	for _, route := range routes {
@@ -42,16 +44,38 @@ func NewController(httpServerUtility httpserver.Utility, service service.Service
 	return controller, nil
 }
 
-func (c *Implementation) CreateTestReminder(ctx *gin.Context) {
+func (c *Implementation) GetReminderSetting(ctx *gin.Context) {
 	userID, ok := httpserver.GetCurrentUserID(ctx)
 	if !ok {
 		return
 	}
 
-	scheduledAt := time.Now().UTC().Add(2 * time.Minute)
-	err := c.service.CreateReminder(ctx.Request.Context(), service.CreateReminderRequest{
-		UserID:      userID,
-		ScheduledAt: scheduledAt,
+	response, err := c.service.GetReminderSetting(ctx.Request.Context(), userID)
+	if err != nil {
+		_ = ctx.Error(err)
+		ctx.Abort()
+		return
+	}
+
+	ctx.JSON(http.StatusOK, response)
+}
+
+func (c *Implementation) UpdateReminderSetting(ctx *gin.Context) {
+	userID, ok := httpserver.GetCurrentUserID(ctx)
+	if !ok {
+		return
+	}
+
+	var request reminderdto.UpdateReminderSettingRequest
+	if err := ctx.ShouldBindJSON(&request); err != nil {
+		_ = ctx.Error(err)
+		ctx.Abort()
+		return
+	}
+
+	response, err := c.service.UpdateReminderSetting(ctx.Request.Context(), service.UpdateReminderSettingRequest{
+		UserID:  userID,
+		Enabled: request.Enabled,
 	})
 	if err != nil {
 		_ = ctx.Error(err)
@@ -59,8 +83,24 @@ func (c *Implementation) CreateTestReminder(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusCreated, gin.H{
-		"message":      "test reminder created successfully",
-		"scheduled_at": scheduledAt,
+	ctx.JSON(http.StatusOK, response)
+}
+
+// Test function to run planner immediately without waiting for the cron job. Not exposed in production.
+func (c *Implementation) PlanToday(ctx *gin.Context) {
+	userID, ok := httpserver.GetCurrentUserID(ctx)
+	if !ok {
+		return
+	}
+
+	err := c.service.PlanSmartReminders(ctx.Request.Context(), &userID)
+	if err != nil {
+		_ = ctx.Error(err)
+		ctx.Abort()
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"message": "smart reminders planned successfully",
 	})
 }
